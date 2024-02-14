@@ -1,36 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FaFire } from "react-icons/fa";
+import React, {
+  Dispatch,
+  SetStateAction,
+  useState,
+  DragEvent,
+  FormEvent,
+} from "react";
 import { FiPlus, FiTrash } from "react-icons/fi";
 import { motion } from "framer-motion";
+import { FaFire } from "react-icons/fa";
 
-export default function Home() {
+const Home = () => {
   return (
     <div className="h-screen w-full bg-neutral-900 text-neutral-50">
       <Board />
     </div>
   );
-}
+};
 
 const Board = () => {
-  const [cards, setCards] = useState([]);
-  const [hasChecked, setHasChecked] = useState(false);
-
-  useEffect(() => {
-    hasChecked && localStorage.setItem("cards", JSON.stringify(cards));
-  }, [cards]);
-
-  useEffect(() => {
-    const cardData = localStorage.getItem("cards");
-
-    setCards(cardData ? JSON.parse(cardData) : []);
-
-    setHasChecked(true);
-  }, []);
+  const [cards, setCards] = useState(DEFAULT_CARDS);
 
   return (
-    <div className="flex h-full w-full gap-5 overflow-scroll p-12">
+    <div className="flex h-full w-full gap-3 overflow-scroll p-12">
       <Column
         title="Backlog"
         column="backlog"
@@ -38,7 +31,6 @@ const Board = () => {
         cards={cards}
         setCards={setCards}
       />
-
       <Column
         title="TODO"
         column="todo"
@@ -46,7 +38,6 @@ const Board = () => {
         cards={cards}
         setCards={setCards}
       />
-
       <Column
         title="In progress"
         column="doing"
@@ -54,7 +45,6 @@ const Board = () => {
         cards={cards}
         setCards={setCards}
       />
-
       <Column
         title="Complete"
         column="done"
@@ -67,27 +57,70 @@ const Board = () => {
   );
 };
 
-const Column = ({ title, headingColor, column, cards, setCards }) => {
+type ColumnProps = {
+  title: string;
+  headingColor: string;
+  cards: CardType[];
+  column: ColumnType;
+  setCards: Dispatch<SetStateAction<CardType[]>>;
+};
+
+const Column = ({
+  title,
+  headingColor,
+  cards,
+  column,
+  setCards,
+}: ColumnProps) => {
   const [active, setActive] = useState(false);
 
-  const handleDragStart = (e, card) => {
+  const handleDragStart = (e: DragEvent, card: CardType) => {
     e.dataTransfer.setData("cardId", card.id);
   };
 
-  const handleDragOver = (e) => {
+  const handleDragEnd = (e: DragEvent) => {
+    const cardId = e.dataTransfer.getData("cardId");
+
+    setActive(false);
+    clearHighlights();
+
+    const indicators = getIndicators();
+    const { element } = getNearestIndicator(e, indicators);
+
+    const before = element.dataset.before || "-1";
+
+    if (before !== cardId) {
+      let copy = [...cards];
+
+      let cardToTransfer = copy.find((c) => c.id === cardId);
+      if (!cardToTransfer) return;
+      cardToTransfer = { ...cardToTransfer, column };
+
+      copy = copy.filter((c) => c.id !== cardId);
+
+      const moveToBack = before === "-1";
+
+      if (moveToBack) {
+        copy.push(cardToTransfer);
+      } else {
+        const insertAtIndex = copy.findIndex((el) => el.id === before);
+        if (insertAtIndex === undefined) return;
+
+        copy.splice(insertAtIndex, 0, cardToTransfer);
+      }
+
+      setCards(copy);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     highlightIndicator(e);
+
     setActive(true);
   };
 
-  const highlightIndicator = (e) => {
-    const indicators = getIndicators();
-    clearHighlights(indicators);
-    const el = getNearestIndicator(e, indicators);
-    el.element.style.opacity = "1";
-  };
-
-  const clearHighlights = (els) => {
+  const clearHighlights = (els?: HTMLElement[]) => {
     const indicators = els || getIndicators();
 
     indicators.forEach((i) => {
@@ -95,12 +128,23 @@ const Column = ({ title, headingColor, column, cards, setCards }) => {
     });
   };
 
-  const getNearestIndicator = (e, indicators) => {
+  const highlightIndicator = (e: DragEvent) => {
+    const indicators = getIndicators();
+
+    clearHighlights(indicators);
+
+    const el = getNearestIndicator(e, indicators);
+
+    el.element.style.opacity = "1";
+  };
+
+  const getNearestIndicator = (e: DragEvent, indicators: HTMLElement[]) => {
     const DISTANCE_OFFSET = 50;
 
     const el = indicators.reduce(
       (closest, child) => {
         const box = child.getBoundingClientRect();
+
         const offset = e.clientY - (box.top + DISTANCE_OFFSET);
 
         if (offset < 0 && offset > closest.offset) {
@@ -115,92 +159,62 @@ const Column = ({ title, headingColor, column, cards, setCards }) => {
       }
     );
 
-    console.log(el);
-
     return el;
   };
 
   const getIndicators = () => {
-    return Array.from(document.querySelectorAll(`[data-column="${column}"]`));
+    return Array.from(
+      document.querySelectorAll(
+        `[data-column="${column}"]`
+      ) as unknown as HTMLElement[]
+    );
   };
 
   const handleDragLeave = () => {
-    setActive(false);
     clearHighlights();
+    setActive(false);
   };
 
-  const handleDragEnd = (e) => {
-    setActive(false);
-    clearHighlights();
-
-    const cardId = e.dataTransfer.getData("cardId");
-    const indicators = getIndicators();
-    const { element } = getNearestIndicator(e, indicators);
-
-    const before = element.dataset.before || "-1";
-
-    if (before !== cardId) {
-      let copy = [...cards];
-
-      let cardToTransfer = copy.find((c) => c.id === cardId);
-
-      if (!cardToTransfer) return;
-
-      cardToTransfer = { ...cardToTransfer, column };
-
-      copy = copy.filter((c) => c.id !== cardId);
-
-      const moveToBack = before === "-1";
-
-      if (moveToBack) {
-        copy.push(cardToTransfer);
-      } else {
-        const insertAtIndex = copy.findIndex((el) => el.id === before);
-        if (insertAtIndex === undefined) return;
-        copy.splice(insertAtIndex, 0, cardToTransfer);
-      }
-
-      setCards(copy);
-    }
-  };
-
-  const filterCards = cards.filter((c) => c.column === column);
+  const filteredCards = cards.filter((c) => c.column === column);
 
   return (
     <div className="w-56 shrink-0">
       <div className="mb-3 flex items-center justify-between">
         <h3 className={`font-medium ${headingColor}`}>{title}</h3>
         <span className="rounded text-sm text-neutral-400">
-          {filterCards.length}
+          {filteredCards.length}
         </span>
       </div>
-
       <div
+        onDrop={handleDragEnd}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={handleDragEnd}
         className={`h-full w-full transition-colors ${
           active ? "bg-neutral-800/50" : "bg-neutral-800/0"
         }`}
       >
-        {filterCards.map((c) => {
+        {filteredCards.map((c) => {
           return <Card key={c.id} {...c} handleDragStart={handleDragStart} />;
         })}
-        <DropIndicator before="-1" column={column} />
+        <DropIndicator beforeId={null} column={column} />
         <AddCard column={column} setCards={setCards} />
       </div>
     </div>
   );
 };
 
-const Card = ({ title, id, column, handleDragStart }) => {
+type CardProps = CardType & {
+  handleDragStart: Function;
+};
+
+const Card = ({ title, id, column, handleDragStart }: CardProps) => {
   return (
     <>
       <DropIndicator beforeId={id} column={column} />
       <motion.div
         layout
         layoutId={id}
-        draggable
+        draggable="true"
         onDragStart={(e) => handleDragStart(e, { title, id, column })}
         className="cursor-grab rounded border border-neutral-700 bg-neutral-800 p-3 active:cursor-grabbing"
       >
@@ -210,20 +224,29 @@ const Card = ({ title, id, column, handleDragStart }) => {
   );
 };
 
-const DropIndicator = ({ beforeId, column }) => {
+type DropIndicatorProps = {
+  beforeId: string | null;
+  column: string;
+};
+
+const DropIndicator = ({ beforeId, column }: DropIndicatorProps) => {
   return (
     <div
-      data-before={beforeId || -1}
+      data-before={beforeId || "-1"}
       data-column={column}
       className="my-0.5 h-0.5 w-full bg-violet-400 opacity-0"
     />
   );
 };
 
-const BurnBarrel = ({ setCards }) => {
+const BurnBarrel = ({
+  setCards,
+}: {
+  setCards: Dispatch<SetStateAction<CardType[]>>;
+}) => {
   const [active, setActive] = useState(false);
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     setActive(true);
   };
@@ -232,13 +255,14 @@ const BurnBarrel = ({ setCards }) => {
     setActive(false);
   };
 
-  const handleDragEnd = (e) => {
+  const handleDragEnd = (e: DragEvent) => {
     const cardId = e.dataTransfer.getData("cardId");
 
     setCards((pv) => pv.filter((c) => c.id !== cardId));
 
     setActive(false);
   };
+
   return (
     <div
       onDrop={handleDragEnd}
@@ -247,19 +271,24 @@ const BurnBarrel = ({ setCards }) => {
       className={`mt-10 grid h-56 w-56 shrink-0 place-content-center rounded border text-3xl ${
         active
           ? "border-red-800 bg-red-800/20 text-red-500"
-          : " border-neutral-500 bg-neutral-500/20 text-neutral-500"
+          : "border-neutral-500 bg-neutral-500/20 text-neutral-500"
       }`}
     >
-      {active ? <FaFire className="animated-bounce" /> : <FiTrash />}
+      {active ? <FaFire className="animate-bounce" /> : <FiTrash />}
     </div>
   );
 };
 
-const AddCard = ({ column, setCards }) => {
+type AddCardProps = {
+  column: ColumnType;
+  setCards: Dispatch<SetStateAction<CardType[]>>;
+};
+
+const AddCard = ({ column, setCards }: AddCardProps) => {
   const [text, setText] = useState("");
   const [adding, setAdding] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!text.trim().length) return;
@@ -285,7 +314,6 @@ const AddCard = ({ column, setCards }) => {
             placeholder="Add new task..."
             className="w-full rounded border border-violet-400 bg-violet-400/20 p-3 text-sm text-neutral-50 placeholder-violet-300 focus:outline-0"
           />
-
           <div className="mt-1.5 flex items-center justify-end gap-1.5">
             <button
               onClick={() => setAdding(false)}
@@ -315,3 +343,43 @@ const AddCard = ({ column, setCards }) => {
     </>
   );
 };
+
+type ColumnType = "backlog" | "todo" | "doing" | "done";
+
+type CardType = {
+  title: string;
+  id: string;
+  column: ColumnType;
+};
+
+const DEFAULT_CARDS: CardType[] = [
+  // BACKLOG
+  { title: "Look into render bug in dashboard", id: "1", column: "backlog" },
+  { title: "SOX compliance checklist", id: "2", column: "backlog" },
+  { title: "[SPIKE] Migrate to Azure", id: "3", column: "backlog" },
+  { title: "Document Notifications service", id: "4", column: "backlog" },
+  // TODO
+  {
+    title: "Research DB options for new microservice",
+    id: "5",
+    column: "todo",
+  },
+  { title: "Postmortem for outage", id: "6", column: "todo" },
+  { title: "Sync with product on Q3 roadmap", id: "7", column: "todo" },
+
+  // DOING
+  {
+    title: "Refactor context providers to use Zustand",
+    id: "8",
+    column: "doing",
+  },
+  { title: "Add logging to daily CRON", id: "9", column: "doing" },
+  // DONE
+  {
+    title: "Set up DD dashboards for Lambda listener",
+    id: "10",
+    column: "done",
+  },
+];
+
+export default Home;
